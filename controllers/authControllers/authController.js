@@ -1,9 +1,9 @@
-import { User } from "../modals/User.js";
-import asyncHandler from "../utils/asyncHandler.js"
-import apiError from "../utils/apiError.js"
-import apiResponse from "../utils/apiResponse.js"
-import emailValidationService from "../services/emailValidationService.js"
-import phoneValidationService from "../services/phoneValidationService.js"
+import { User } from "../../modals/User.js";
+import asyncHandler from "../../utils/asyncHandler.js"
+import apiError from "../../utils/apiError.js"
+import apiResponse from "../../utils/apiResponse.js"
+import emailValidationService from "../../services/emailValidationService.js"
+import phoneValidationService from "../../services/phoneValidationService.js"
 
 const registerUser = asyncHandler(async (req, res) => {
 
@@ -77,7 +77,27 @@ const loginUser = asyncHandler(async (req, res) => {
             new apiResponse(200, "User Logged In Successfully", loggedInUser)
         )
 })
+
+
+const logOutUser = asyncHandler(async (req, res) => {
+    await User.findByIdAndUpdate(
+        req.user._id,
+        { refreshToken: "" },
+        { new: true }
+    )
+    const options = {
+        httpOnly: true,
+        secure: true,
+    }
+    return res.status(200)
+        .clearCookie("refreshToken", options)
+        .clearCookie("accessToken", options)
+        .json(
+            new apiResponse(200, "User Logged Out Successfully", {})
+        )
+})
 export {
     registerUser,
-    loginUser
+    loginUser,
+    logOutUser
 }

@@ -54,6 +54,6 @@ export const isLoggedIn = asyncHandler(async (req, res, next) => {
         next();
 
     } catch (error) {
-        next(new apiError(401, error?.message || "Unauthorized request"));
+        throw new apiError(401, error?.message || "Unauthorized request");
     }
 });
