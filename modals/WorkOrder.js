@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 
-// Embedded: parts used in a work order (from Java's WorkOrderPart)
 const workOrderPartSchema = new mongoose.Schema({
     inventoryItem: {
         type: mongoose.Schema.Types.ObjectId,
@@ -14,7 +13,6 @@ const workOrderPartSchema = new mongoose.Schema({
     },
 });
 
-// Embedded: file attachments for a work order (from Java's WorkOrderAttachment)
 const workOrderAttachmentSchema = new mongoose.Schema(
     {
         fileUrl: {
@@ -42,7 +40,6 @@ const workOrderSchema = new mongoose.Schema(
             ref: "Client",
             required: true,
         },
-        // References the specific client location (embedded inside Client)
         clientLocationId: {
             type: mongoose.Schema.Types.ObjectId,
         },
@@ -82,7 +79,6 @@ const workOrderSchema = new mongoose.Schema(
             required: true,
         },
 
-        // Embedded sub-documents
         parts: [workOrderPartSchema],
         attachments: [workOrderAttachmentSchema],
     },

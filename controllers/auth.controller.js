@@ -1,9 +1,9 @@
-import { User } from "../../modals/User.js";
-import asyncHandler from "../../utils/asyncHandler.js"
-import apiError from "../../utils/apiError.js"
-import apiResponse from "../../utils/apiResponse.js"
-import emailValidationService from "../../services/emailValidationService.js"
-import phoneValidationService from "../../services/phoneValidationService.js"
+import { User } from "../modals/User.js";
+import asyncHandler from "../utils/asyncHandler.js"
+import apiError from "../utils/apiError.js"
+import apiResponse from "../utils/apiResponse.js"
+import emailValidationService from "../services/emailValidationService.js"
+import phoneValidationService from "../services/phoneValidationService.js"
 
 const registerUser = asyncHandler(async (req, res) => {
 

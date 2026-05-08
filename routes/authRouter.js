@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { registerUser, loginUser, logOutUser } from "../controllers/authControllers/authController.js"
-import { isLoggedIn } from "../middlewares/isLoggedIn.js";
+import { registerUser, loginUser, logOutUser } from "../controllers/auth.controller.js"
+import { isLoggedIn } from "../middlewares/isLoggedIn.middleware.js";
 const router = Router();
 
 router.route("/register").post(registerUser)
