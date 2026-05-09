@@ -11,6 +11,7 @@ const planSchema = new mongoose.Schema({
     price: {
         type: Number,
         required: true,
+        min: [1, "Plan price must be at least $1. Free plans are not available."],
     },
     maxWorkOrders: {
         type: Number,

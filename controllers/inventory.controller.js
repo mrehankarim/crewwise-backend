@@ -1,5 +1,6 @@
 import { User } from "../modals/User.js";
 import { InventoryItem } from "../modals/InventoryItem.js";
+import { WorkOrder } from "../modals/WorkOrder.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import apiError from "../utils/apiError.js";
 import apiResponse from "../utils/apiResponse.js";
@@ -121,6 +122,19 @@ const deassignInventoryItemFromWorkOrder = asyncHandler(async (req, res) => {
     )
 })
 
+const getInventoryItemsByOrganization = asyncHandler(async (req, res) => {
+    const { organizationId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const [items, total] = await Promise.all([
+        InventoryItem.find({ organization: organizationId }).skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
+        InventoryItem.countDocuments({ organization: organizationId }),
+    ]);
+    return res.status(200).json(new apiResponse(200, "Inventory Items Fetched Successfully", {
+        items, total, page: Number(page), totalPages: Math.ceil(total / Number(limit)),
+    }));
+});
+
 export {
     createInventoryItem,
     getInventoryItems,
@@ -128,5 +142,6 @@ export {
     updateInventoryItem,
     deleteInventoryItem,
     assignInverntoryItemToWorkOrder,
-    deassignInventoryItemFromWorkOrder
+    deassignInventoryItemFromWorkOrder,
+    getInventoryItemsByOrganization,
 }

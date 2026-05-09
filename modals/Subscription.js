@@ -17,7 +17,6 @@ const subscriptionSchema = new mongoose.Schema(
             required: true,
             default: Date.now,
         },
-        // End date is calculated as startDate + plan.duration days (handled in service layer)
         endDate: {
             type: Date,
         },

@@ -7,14 +7,32 @@ const paymentSchema = new mongoose.Schema(
             ref: "Invoice",
             required: true,
         },
+        amount: {
+            type: Number,
+            required: true,
+        },
+        currency: {
+            type: String,
+            default: "USD",
+        },
         paymentMethod: {
             type: String,
-            enum: ["credit_card", "bank_transfer", "cash", "other"],
+            enum: ["paypal", "credit_card", "bank_transfer", "cash", "other"],
             required: true,
+        },
+        status: {
+            type: String,
+            enum: ["pending", "completed", "failed", "refunded"],
+            default: "pending",
+        },
+        paypalOrderId: {
+            type: String,
+        },
+        paypalCaptureId: {
+            type: String,
         },
         paymentDate: {
             type: Date,
-            default: Date.now,
         },
     },
     { timestamps: true }

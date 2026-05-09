@@ -24,7 +24,6 @@ const userSchema = new mongoose.Schema(
         },
         phoneNumber: {
             type: String,
-            required: false,
         },
         profilePictureUrl: {
             type: String,
@@ -34,22 +33,28 @@ const userSchema = new mongoose.Schema(
         },
         role: {
             type: String,
-            enum: ["admin", "contractor", "technician", "manager"],
+            enum: ["admin", "manager", "submanager", "technician", "contractor"],
             required: true,
         },
         isActive: {
             type: Boolean,
             default: true,
         },
-
-        // Organization this user belongs to (null for admins)
         organization: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Organization",
         },
-
-        // ── Manager-specific fields ──────────────────────────────
+        addedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+        },
         managerDetails: {
+            subManagers: [
+                {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: "User",
+                },
+            ],
             managedWorkers: [
                 {
                     type: mongoose.Schema.Types.ObjectId,
@@ -57,8 +62,6 @@ const userSchema = new mongoose.Schema(
                 },
             ],
         },
-
-        // ── Technician / Contractor-specific fields ──────────────
         workerDetails: {
             designation: {
                 type: String,
@@ -89,43 +92,40 @@ const userSchema = new mongoose.Schema(
         },
         refreshToken: {
             type: String,
-        }
+        },
     },
     { timestamps: true }
 );
 
 userSchema.pre("save", async function () {
     if (!this.isModified("password")) return;
-    this.password = await bcrypt.hash(this.password, 10)
-})
+    this.password = await bcrypt.hash(this.password, 10);
+});
 
 userSchema.methods.matchPassword = async function (password) {
     return await bcrypt.compare(password, this.password);
-}
+};
 
 userSchema.methods.generateAccessToken = async function () {
-    return jwt.sign({
-        _id: this._id,
-        name: this.name,
-        email: this.email,
-        role: this.role
-    },
-        process.env.ACCESS_TOKEN_SECRET,
+    return jwt.sign(
         {
-            expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
-        }
-    )
-}
+            _id: this._id,
+            name: this.name,
+            email: this.email,
+            role: this.role,
+            organization: this.organization,
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+    );
+};
 
 userSchema.methods.generateRefreshToken = async function () {
-    return jwt.sign({
-        _id: this._id,
-    },
+    return jwt.sign(
+        { _id: this._id },
         process.env.REFRESH_TOKEN_SECRET,
-        {
-            expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
-        }
-    )
-}
+        { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+    );
+};
 
 export const User = mongoose.model("User", userSchema);

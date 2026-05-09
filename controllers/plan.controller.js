@@ -8,6 +8,9 @@ const createPlan = asyncHandler(async (req, res) => {
     if (!name || !price || !maxWorkOrders || !maxUsers || !duration) {
         throw new apiError(400, "All fields are required");
     }
+    if (price < 1) {
+        throw new apiError(400, "Plan price must be at least $1. Free plans are not available.");
+    }
     const plan = await Plan.create({
         name,
         price,

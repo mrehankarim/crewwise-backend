@@ -99,5 +99,6 @@ export {
     getSkills,
     getSkillById,
     updateSkill,
-    deleteSkill
+    deleteSkill,
+    assignSkillToWorker,
 }
