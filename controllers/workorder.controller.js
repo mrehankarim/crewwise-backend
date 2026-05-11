@@ -11,11 +11,11 @@ import apiResponse from "../utils/apiResponse.js";
 import fileUploader from "../utils/cloudinary.js";
 
 const createWorkOrder = asyncHandler(async (req, res) => {
-    const { title, category, priority, clientId, clientLocationId, startTime, endTime } = req.body;
+    const { title, category, priority, clientId, clientLocationId } = req.body;
     const organizationId = req.body.organizationId || req.user.organization;
 
-    if (!title || !category || !clientId || !startTime || !endTime || !organizationId) {
-        throw new apiError(400, "title, category, clientId, startTime, endTime, and organization are required");
+    if (!title || !category || !clientId || !organizationId) {
+        throw new apiError(400, "title, category, clientId, and organization are required");
     }
     const client = await Client.findById(clientId);
     if (!client) throw new apiError(404, "Client not found");
@@ -29,8 +29,6 @@ const createWorkOrder = asyncHandler(async (req, res) => {
         priority: priority || "regular",
         client: clientId,
         clientLocationId,
-        startTime,
-        endTime,
         organization: organizationId,
         createdBy: req.user._id,
         status: "created",
@@ -52,7 +50,7 @@ const getWorkOrderById = asyncHandler(async (req, res) => {
 
 const updateWorkOrder = asyncHandler(async (req, res) => {
     const { workOrderId } = req.params;
-    const { title, category, priority, startTime, endTime } = req.body;
+    const { title, category, priority } = req.body;
     const workOrder = await WorkOrder.findById(workOrderId);
     if (!workOrder) throw new apiError(404, "Work Order not found");
     if (workOrder.status === "completed" || workOrder.status === "cancelled") {
@@ -61,8 +59,6 @@ const updateWorkOrder = asyncHandler(async (req, res) => {
     if (title) workOrder.title = title;
     if (category) workOrder.category = category;
     if (priority) workOrder.priority = priority;
-    if (startTime) workOrder.startTime = startTime;
-    if (endTime) workOrder.endTime = endTime;
     await workOrder.save();
     return res.status(200).json(new apiResponse(200, "Work Order Updated Successfully", workOrder));
 });
@@ -88,13 +84,24 @@ const updateWorkOrderStatus = asyncHandler(async (req, res) => {
     await workOrder.save();
 
     const assignments = await WorkOrderAssignment.find({ workOrder: workOrderId });
-    const workerIds = assignments.map(a => a.worker);
+    const workerIds = assignments.map(a => a.worker.toString());
 
-    if (workerIds.length > 0) {
-        const notifications = workerIds.map(workerId => ({
-            user: workerId,
+    const orgManagers = await User.find({ 
+        organization: workOrder.organization, 
+        role: { $in: ["manager", "submanager"] } 
+    });
+    const managerIds = orgManagers.map(m => m._id.toString());
+
+    // Combine unique user IDs to notify, excluding the current user
+    const usersToNotify = [...new Set([...workerIds, ...managerIds])]
+        .filter(id => id !== req.user._id.toString());
+
+    if (usersToNotify.length > 0) {
+        const notifications = usersToNotify.map(userId => ({
+            user: userId,
             workOrder: workOrderId,
-            message: `Work order "${workOrder.title}" status changed to ${status}`,
+            type: "status_change",
+            message: `Work order "${workOrder.title}" status changed to ${status} by ${req.user.name}`,
         }));
         await Notification.insertMany(notifications);
     }
@@ -142,6 +149,7 @@ const assignWorkOrderToWorker = asyncHandler(async (req, res) => {
     await Notification.create({
         user: workerId,
         workOrder: workOrderId,
+        type: "assignment",
         message: `You have been assigned to work order "${workOrder.title}"`,
     });
 
@@ -230,6 +238,43 @@ const removePartFromWorkOrder = asyncHandler(async (req, res) => {
     return res.status(200).json(new apiResponse(200, "Part Removed Successfully", workOrder));
 });
 
+const returnPartFromWorkOrder = asyncHandler(async (req, res) => {
+    const { workOrderId } = req.params;
+    const { inventoryItemId, quantity } = req.body;
+    if (!inventoryItemId || !quantity) throw new apiError(400, "Inventory item and quantity are required");
+
+    const workOrder = await WorkOrder.findById(workOrderId);
+    if (!workOrder) throw new apiError(404, "Work Order not found");
+
+    const partIndex = workOrder.parts.findIndex(p => p.inventoryItem.toString() === inventoryItemId);
+    if (partIndex === -1) throw new apiError(404, "Part not found in work order");
+
+    const part = workOrder.parts[partIndex];
+    const returnQty = Math.min(Number(quantity), part.quantity);
+
+    const item = await InventoryItem.findById(inventoryItemId);
+    if (item) {
+        item.quantity += returnQty;
+        await item.save();
+    }
+
+    if (returnQty >= part.quantity) {
+        workOrder.parts.splice(partIndex, 1);
+    } else {
+        workOrder.parts[partIndex].quantity -= returnQty;
+    }
+    await workOrder.save();
+
+    await Notification.create({
+        user: req.user._id,
+        workOrder: workOrderId,
+        type: "part",
+        message: `${req.user.name} returned ${returnQty}x ${item?.name || 'item'} to inventory`,
+    });
+
+    return res.status(200).json(new apiResponse(200, "Part Returned Successfully", workOrder));
+});
+
 const addAttachmentToWorkOrder = asyncHandler(async (req, res) => {
     const { workOrderId } = req.params;
     if (!req.file) throw new apiError(400, "Attachment file is required");
@@ -256,6 +301,7 @@ const getOrganizationWorkOrders = asyncHandler(async (req, res) => {
         WorkOrder.find(filter)
             .populate("client", "name email")
             .populate("createdBy", "name")
+            .populate("parts.inventoryItem", "name sku")
             .skip(skip)
             .limit(Number(limit))
             .sort({ createdAt: -1 }),
@@ -279,7 +325,40 @@ const getWorkOrderStats = asyncHandler(async (req, res) => {
     const stats = {};
     statuses.forEach((s, i) => (stats[s] = counts[i]));
     stats.total = counts.reduce((a, b) => a + b, 0);
+
+    const now = new Date();
+    const trend = [];
+    for (let i = 3; i >= 0; i--) {
+        const endDate = new Date(now);
+        endDate.setDate(endDate.getDate() - (i * 7));
+        const [weekTotal, weekCompleted] = await Promise.all([
+            WorkOrder.countDocuments({ organization: organizationId, createdAt: { $lte: endDate } }),
+            WorkOrder.countDocuments({ organization: organizationId, status: "completed", updatedAt: { $lte: endDate } })
+        ]);
+        trend.push({ month: `Week ${4 - i}`, Total: weekTotal, Completed: weekCompleted });
+    }
+    stats.trend = trend;
+
     return res.status(200).json(new apiResponse(200, "Work Order Stats Fetched Successfully", stats));
+});
+
+const getAllWorkOrders = asyncHandler(async (req, res) => {
+    const { page = 1, limit = 20, status, priority } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (priority) filter.priority = priority;
+    const skip = (Number(page) - 1) * Number(limit);
+    const [workOrders, total] = await Promise.all([
+        WorkOrder.find(filter)
+            .populate("organization", "name")
+            .populate("client", "name")
+            .populate("createdBy", "name")
+            .skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
+        WorkOrder.countDocuments(filter)
+    ]);
+    return res.status(200).json(new apiResponse(200, "Work Orders Fetched Successfully", {
+        workOrders, total, page: Number(page), totalPages: Math.ceil(total / Number(limit)),
+    }));
 });
 
 export {
@@ -294,7 +373,9 @@ export {
     getMyWorkOrders,
     addPartToWorkOrder,
     removePartFromWorkOrder,
+    returnPartFromWorkOrder,
     addAttachmentToWorkOrder,
     getOrganizationWorkOrders,
     getWorkOrderStats,
+    getAllWorkOrders,
 };

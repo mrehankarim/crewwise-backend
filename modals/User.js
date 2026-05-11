@@ -22,6 +22,11 @@ const userSchema = new mongoose.Schema(
             type: String,
             required: true,
         },
+        tempPassword: {
+            type: String,
+            default: null,
+            select: false,
+        },
         phoneNumber: {
             type: String,
         },

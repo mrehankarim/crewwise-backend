@@ -24,27 +24,36 @@ import {
     getTotalManagers,
     getTotalContractors,
     getTotalTechnicians,
+    getAllOrganizations,
+    createManagedUser,
+    getManagedUserCredentials,
 } from "../controllers/organization.controller.js";
 import { isLoggedIn } from "../middlewares/isLoggedIn.middleware.js";
 import { isAdmin } from "../middlewares/isAdmin.middleware.js";
 import { isManager } from "../middlewares/isManager.middleware.js";
 import { isManagerOrSub } from "../middlewares/isManagerOrSub.middleware.js";
 import { isSubscribed } from "../middlewares/isSubscribed.middleware.js";
+import { checkPlanLimit } from "../middlewares/checkPlanLimit.middleware.js";
 
 const router = Router();
 
 router.route("/").post(isLoggedIn, isManager, createOrganization);
+router.route("/all").get(isLoggedIn, isAdmin, getAllOrganizations);
 router.route("/:organizationId").get(isLoggedIn, getOrganizationDetails);
 router.route("/:organizationId").put(isLoggedIn, isSubscribed, isManager, updateOrganization);
 router.route("/:organizationId").delete(isLoggedIn, isAdmin, deleteOrganization);
 router.route("/:organizationId/dashboard").get(isLoggedIn, isSubscribed, isManagerOrSub, getDashboardStats);
 
+// Managed user creation (register + add to org in one step, stores temp password)
+router.route("/managed-user/create").post(isLoggedIn, isSubscribed, isManager, checkPlanLimit("maxUsers"), createManagedUser);
+router.route("/managed-user/:userId/credentials").get(isLoggedIn, isSubscribed, isManager, getManagedUserCredentials);
+
 router.route("/:organizationId/submanagers").get(isLoggedIn, isSubscribed, isManager, getSubmanagersOfOrganization);
-router.route("/submanager/add").post(isLoggedIn, isSubscribed, isManager, addSubmanagerToOrganization);
+router.route("/submanager/add").post(isLoggedIn, isSubscribed, isManager, checkPlanLimit("maxUsers"), addSubmanagerToOrganization);
 router.route("/submanager/:userId/remove").delete(isLoggedIn, isSubscribed, isManager, removeSubmanagerFromOrganization);
 
 router.route("/:organizationId/workers").get(isLoggedIn, isSubscribed, isManagerOrSub, getOrganizationWorkers);
-router.route("/worker/add").post(isLoggedIn, isSubscribed, isManager, addWorkerToOrganization);
+router.route("/worker/add").post(isLoggedIn, isSubscribed, isManager, checkPlanLimit("maxUsers"), addWorkerToOrganization);
 router.route("/worker/:workerId/remove").delete(isLoggedIn, isSubscribed, isManager, removeWorkerFromOrganization);
 router.route("/worker/reassign-manager").post(isLoggedIn, isSubscribed, isManager, reassignWorkerManager);
 router.route("/manager/:managerId/workers").get(isLoggedIn, isSubscribed, isManagerOrSub, getWorkersOfManager);

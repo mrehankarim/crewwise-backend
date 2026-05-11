@@ -4,7 +4,8 @@ import apiError from "../utils/apiError.js";
 import apiResponse from "../utils/apiResponse.js";
 
 const createClient = asyncHandler(async (req, res) => {
-    const { name, email, phoneNumber, notes, organizationId, locations } = req.body;
+    const { name, email, phoneNumber, notes, locations } = req.body;
+    const organizationId = req.body.organizationId || req.body.organization || req.user.organization;
     if (!name || !email || !phoneNumber || !organizationId) {
         throw new apiError(400, "Name, email, phone number, and organization are required");
     }

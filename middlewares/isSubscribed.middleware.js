@@ -15,7 +15,7 @@ export const isSubscribed = asyncHandler(async (req, res, next) => {
         organization: orgId,
         isActive: true,
         endDate: { $gt: new Date() },
-    }).populate("plan", "name price");
+    }).populate("plan");
 
     if (!subscription) {
         throw new apiError(402, "Payment required. Your organization does not have an active subscription. Please purchase a plan to access this feature.");

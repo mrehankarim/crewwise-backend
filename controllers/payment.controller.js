@@ -60,6 +60,26 @@ const capturePaypalOrder = asyncHandler(async (req, res) => {
     const { paypalOrderId } = req.params;
     if (!paypalOrderId) throw new apiError(400, "PayPal Order ID is required");
 
+    // DEV MODE BYPASS
+    if (process.env.NODE_ENV !== "production" && paypalOrderId.startsWith("DEV_BYPASS_")) {
+        const invoiceId = paypalOrderId.split("DEV_BYPASS_")[1];
+        const invoice = await Invoice.findById(invoiceId);
+        if (!invoice) throw new apiError(404, "Invoice not found");
+        
+        invoice.paymentStatus = "paid";
+        await invoice.save();
+
+        if (invoice.subscription) {
+            await Subscription.findByIdAndUpdate(invoice.subscription, { isActive: true });
+        }
+
+        return res.status(200).json(new apiResponse(200, "Dev Payment Captured Successfully", {
+            captureId: "dev_capture_" + Date.now(),
+            paypalOrderId,
+            status: "COMPLETED",
+        }));
+    }
+
     const payment = await Payment.findOne({ paypalOrderId });
     if (!payment) throw new apiError(404, "Payment record not found");
     if (payment.status === "completed") throw new apiError(400, "Payment already captured");

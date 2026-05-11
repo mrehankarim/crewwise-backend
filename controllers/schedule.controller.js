@@ -1,6 +1,7 @@
 import { Schedule } from "../modals/Schedule.js";
 import { WorkOrder } from "../modals/WorkOrder.js";
 import { User } from "../modals/User.js";
+import { Notification } from "../modals/Notification.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import apiError from "../utils/apiError.js";
 import apiResponse from "../utils/apiResponse.js";
@@ -27,6 +28,19 @@ const createSchedule = asyncHandler(async (req, res) => {
     if (conflict) throw new apiError(400, "Worker has a scheduling conflict during this time");
 
     const schedule = await Schedule.create({ worker: workerId, workOrder: workOrderId, startTime, endTime });
+    
+    if (workOrder.status === "created") {
+        workOrder.status = "assigned";
+        await workOrder.save();
+    }
+
+    await Notification.create({
+        user: workerId,
+        workOrder: workOrderId,
+        type: "schedule",
+        message: `New schedule created for "${workOrder.title}" on ${new Date(startTime).toLocaleDateString()}`,
+    });
+
     return res.status(201).json(new apiResponse(201, "Schedule Created Successfully", schedule));
 });
 

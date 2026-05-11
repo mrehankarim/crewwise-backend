@@ -70,14 +70,6 @@ const workOrderSchema = new mongoose.Schema(
             ref: "User",
             required: true,
         },
-        startTime: {
-            type: Date,
-            required: true,
-        },
-        endTime: {
-            type: Date,
-            required: true,
-        },
 
         parts: [workOrderPartSchema],
         attachments: [workOrderAttachmentSchema],

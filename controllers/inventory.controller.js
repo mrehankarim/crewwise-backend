@@ -7,7 +7,8 @@ import apiResponse from "../utils/apiResponse.js";
 import { Organization } from "../modals/Organization.js";
 
 const createInventoryItem = asyncHandler(async (req, res) => {
-    const { name, sku, quantity, price, organizationId } = req.body;
+    const { name, sku, quantity, price } = req.body;
+    const organizationId = req.body.organizationId || req.body.organization || req.user.organization;
     if (!name || !sku || !quantity || !price || !organizationId) {
         throw new apiError(400, "All fields are required");
     }

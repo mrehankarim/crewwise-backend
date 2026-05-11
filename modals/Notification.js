@@ -11,6 +11,11 @@ const notificationSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "WorkOrder",
         },
+        type: {
+            type: String,
+            enum: ["assignment", "status_change", "schedule", "part", "general"],
+            default: "general",
+        },
         message: {
             type: String,
             required: true,
@@ -24,3 +29,4 @@ const notificationSchema = new mongoose.Schema(
 );
 
 export const Notification = mongoose.model("Notification", notificationSchema);
+

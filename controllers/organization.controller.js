@@ -4,6 +4,8 @@ import apiError from "../utils/apiError.js";
 import apiResponse from "../utils/apiResponse.js";
 import { WorkOrder } from "../modals/WorkOrder.js";
 import { User } from "../modals/User.js";
+import bcrypt from "bcrypt";
+import mongoose from "mongoose";
 
 const createOrganization = asyncHandler(async (req, res) => {
     const { name, about, industry, location } = req.body;
@@ -298,6 +300,54 @@ const getDashboardStats = asyncHandler(async (req, res) => {
         User.countDocuments({ organization: organizationId, role: "technician" }),
     ]);
 
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const sevenDaysAgo = new Date(startOfToday);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+
+    const weeklyPerformanceAgg = await WorkOrder.aggregate([
+        {
+            $match: {
+                organization: new mongoose.Types.ObjectId(organizationId),
+                createdAt: { $gte: sevenDaysAgo }
+            }
+        },
+        {
+            $group: {
+                _id: {
+                    date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                    status: "$status"
+                },
+                count: { $sum: 1 }
+            }
+        }
+    ]);
+
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weeklyPerformance = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(startOfToday);
+        d.setDate(d.getDate() - i);
+        // Ensure month and day are padded to match %Y-%m-%d
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+        const dayName = days[d.getDay()];
+        
+        let completed = 0;
+        let assigned = 0;
+
+        weeklyPerformanceAgg.forEach(stat => {
+            if (stat._id.date === dateStr) {
+                if (stat._id.status === 'completed') completed += stat.count;
+                else assigned += stat.count; // Everything else considered as active/assigned/created for chart purposes
+            }
+        });
+
+        weeklyPerformance.push({ day: dayName, completed, assigned });
+    }
+
     return res.status(200).json(new apiResponse(200, "Dashboard Stats Fetched Successfully", {
         workOrders: {
             total: totalWorkOrders,
@@ -314,6 +364,7 @@ const getDashboardStats = asyncHandler(async (req, res) => {
             contractors: totalContractors,
             technicians: totalTechnicians,
         },
+        weeklyPerformance
     }));
 });
 
@@ -377,6 +428,104 @@ const getTotalTechnicians = asyncHandler(async (req, res) => {
     return res.status(200).json(new apiResponse(200, "Total Technicians", total));
 });
 
+const getAllOrganizations = asyncHandler(async (req, res) => {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const [organizations, total] = await Promise.all([
+        Organization.find().skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
+        Organization.countDocuments()
+    ]);
+    return res.status(200).json(new apiResponse(200, "Organizations Fetched Successfully", {
+        organizations, total, page: Number(page), totalPages: Math.ceil(total / Number(limit)),
+    }));
+});
+
+/**
+ * Manager creates a worker or submanager account in one step.
+ * Registers the user, adds them to the org, and stores the plaintext
+ * password temporarily in `tempPassword` so the manager can share it.
+ */
+const createManagedUser = asyncHandler(async (req, res) => {
+    const { name, email, password, role, phoneNumber, designation, category, salary } = req.body;
+
+    if (!name || !email || !password || !role)
+        throw new apiError(400, "name, email, password and role are required");
+
+    const allowedRoles = ["submanager", "technician", "contractor"];
+    if (!allowedRoles.includes(role))
+        throw new apiError(400, `Role must be one of: ${allowedRoles.join(", ")}`);
+
+    const orgId = req.user.organization;
+    if (!orgId) throw new apiError(400, "You are not associated with any organization");
+
+    if (password.length < 6)
+        throw new apiError(400, "Password must be at least 6 characters");
+
+    const existing = await User.findOne({ email });
+    if (existing) throw new apiError(400, "An account with this email already exists");
+
+    const workerDetails = {};
+    if (role === "technician" || role === "contractor") {
+        if (designation) workerDetails.designation = designation;
+        if (category) workerDetails.category = category;
+        if (salary) workerDetails.salary = Number(salary);
+        workerDetails.manager = req.user._id;
+    }
+
+    // Create user — pre-save hook will hash password
+    const user = await User.create({ name, email, password, phoneNumber, role, workerDetails });
+
+    // Store plaintext password so manager can retrieve and share it
+    await User.findByIdAndUpdate(user._id, { tempPassword: password });
+
+    // Add to organization
+    user.organization = orgId;
+    user.addedBy = req.user._id;
+    await user.save({ validateBeforeSave: false });
+
+    if (role === "submanager") {
+        await User.findByIdAndUpdate(req.user._id, {
+            $addToSet: { "managerDetails.subManagers": user._id },
+        });
+    } else {
+        await User.findByIdAndUpdate(req.user._id, {
+            $addToSet: { "managerDetails.managedWorkers": user._id },
+        });
+    }
+
+    const created = await User.findById(user._id).select("-password -refreshToken");
+    return res.status(201).json(new apiResponse(201, "User Created Successfully", {
+        user: created,
+        credentials: { email, password, role },
+    }));
+});
+
+/**
+ * Retrieve the temporary plaintext password for a managed user.
+ * Only the manager who added the user to the org can access this.
+ */
+const getManagedUserCredentials = asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+    const orgId = req.user.organization?.toString();
+    if (!orgId) throw new apiError(400, "You are not associated with any organization");
+
+    // Explicitly select tempPassword
+    const user = await User.findById(userId).select("+tempPassword");
+    if (!user) throw new apiError(404, "User not found");
+    if (user.organization?.toString() !== orgId)
+        throw new apiError(403, "This user does not belong to your organization");
+
+    return res.status(200).json(new apiResponse(200, "Credentials Retrieved", {
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tempPassword: user.tempPassword || null,
+        note: user.tempPassword
+            ? "This is a temporary password. The user should change it on first login."
+            : "Password has already been changed by the user.",
+    }));
+});
+
 export {
     createOrganization,
     getOrganizationDetails,
@@ -402,4 +551,7 @@ export {
     getTotalManagers,
     getTotalContractors,
     getTotalTechnicians,
+    getAllOrganizations,
+    createManagedUser,
+    getManagedUserCredentials,
 };

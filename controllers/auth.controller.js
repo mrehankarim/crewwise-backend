@@ -6,7 +6,7 @@ import apiResponse from "../utils/apiResponse.js";
 import emailValidationService from "../services/emailValidationService.js";
 import phoneValidationService from "../services/phoneValidationService.js";
 
-const ALLOWED_SELF_REGISTER_ROLES = ["manager", "technician", "contractor", "submanager"];
+const ALLOWED_SELF_REGISTER_ROLES = ["admin", "manager", "technician", "contractor", "submanager"];
 
 const registerUser = asyncHandler(async (req, res) => {
     const { name, email, password, phoneNumber, role } = req.body;
@@ -73,10 +73,10 @@ const loginUser = asyncHandler(async (req, res) => {
             organization: user.organization,
             isActive: true,
             endDate: { $gt: new Date() },
-        }).populate("plan", "name price");
+        }).populate("plan");
 
         subscriptionStatus = activeSubscription
-            ? { active: true, plan: activeSubscription.plan?.name, expiresAt: activeSubscription.endDate }
+            ? { active: true, plan: activeSubscription.plan, expiresAt: activeSubscription.endDate }
             : { active: false, message: "Payment required. Please purchase a plan to access software features." };
     } else if (user.role !== "admin" && !user.organization) {
         subscriptionStatus = { active: false, message: "No organization found. Please create an organization and subscribe to a plan." };
@@ -107,7 +107,20 @@ const getMe = asyncHandler(async (req, res) => {
         .populate("managerDetails.managedWorkers", "name email role workerDetails.status")
         .populate("managerDetails.subManagers", "name email")
         .populate("addedBy", "name email role");
-    return res.status(200).json(new apiResponse(200, "Profile Fetched Successfully", user));
+    let subscriptionStatus = null;
+    if (user.role !== "admin" && user.organization) {
+        const activeSubscription = await Subscription.findOne({
+            organization: user.organization._id,
+            isActive: true,
+            endDate: { $gt: new Date() },
+        }).populate("plan");
+
+        subscriptionStatus = activeSubscription
+            ? { active: true, plan: activeSubscription.plan, expiresAt: activeSubscription.endDate }
+            : { active: false, message: "Payment required. Please purchase a plan to access software features." };
+    }
+
+    return res.status(200).json(new apiResponse(200, "Profile Fetched Successfully", { user, subscriptionStatus }));
 });
 
 const updateProfile = asyncHandler(async (req, res) => {
@@ -141,6 +154,8 @@ const changePassword = asyncHandler(async (req, res) => {
     if (!isMatch) throw new apiError(400, "Current password is incorrect");
 
     user.password = newPassword;
+    // Clear temp password — user has now set their own password
+    await User.findByIdAndUpdate(user._id, { tempPassword: null });
     await user.save();
     return res.status(200).json(new apiResponse(200, "Password Changed Successfully", {}));
 });

@@ -41,4 +41,14 @@ const deleteNotification = asyncHandler(async (req, res) => {
     return res.status(200).json(new apiResponse(200, "Notification Deleted Successfully", {}));
 });
 
-export { getMyNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification };
+const deleteAllNotifications = asyncHandler(async (req, res) => {
+    await Notification.deleteMany({ user: req.user._id });
+    return res.status(200).json(new apiResponse(200, "All Notifications Deleted", {}));
+});
+
+const getUnreadCount = asyncHandler(async (req, res) => {
+    const count = await Notification.countDocuments({ user: req.user._id, isRead: false });
+    return res.status(200).json(new apiResponse(200, "Unread count fetched", { count }));
+});
+
+export { getMyNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, deleteAllNotifications, getUnreadCount };
