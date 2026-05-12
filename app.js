@@ -7,7 +7,18 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-    origin: ["http://localhost:5173", "http://localhost:5174"],
+    origin: function (origin, callback) {
+        const allowedOrigins = [
+            "http://localhost:5173", 
+            "http://localhost:5174",
+            "http://localhost:8081" // Expo Web default
+        ];
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error("Not allowed by CORS"));
+        }
+    },
     credentials: true,
 }));
 app.use(express.json({ limit: "16kb" }));
